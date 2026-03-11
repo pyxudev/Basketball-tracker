@@ -788,7 +788,9 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+        html, body, #root { width: 100%; height: 100dvh; overflow: hidden; }
+        .app-container { height: 100vh; height: 100dvh; }
+        .nav-bar { padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
         input, select, textarea { min-width: 0; font-family: inherit; }
         button { font-family: inherit; }
         ::-webkit-scrollbar { width: 4px; }
@@ -796,7 +798,8 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
       `}</style>
     <div style={{
-      width: "100vw", height: "100vh",
+      width: "100vw", height: "100dvh",
+      // dvh fallback handled via CSS
       display: "flex", flexDirection: "column", overflow: "hidden",
       background: "linear-gradient(135deg, #fff7ed 0%, #f8fafc 50%, #fff7ed 100%)",
       position: "fixed", top: 0, left: 0,
@@ -837,7 +840,7 @@ export default function App() {
       </main>
 
       {/* Bottom Nav */}
-      <nav style={{
+      <nav className="nav-bar" style={{
         background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
         borderTop: "1px solid rgba(226,232,240,0.6)", padding: "8px 4px",
         flexShrink: 0, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)",
