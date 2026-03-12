@@ -18,17 +18,19 @@ const TABS = [
   { id: "growth",   label: "成長",    icon: "📈" },
 ];
 
-// ==================== STORAGE (window.storage) ====================
+// ==================== STORAGE (localStorage) ====================
+const STORAGE_PREFIX = "basketball_tracker_";
 const DB = {
   async get(key) {
     try {
-      const r = await window.storage.get(key);
-      return r ? JSON.parse(r.value) : null;
+      const raw = localStorage.getItem(STORAGE_PREFIX + key);
+      return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   },
   async set(key, value) {
-    try { await window.storage.set(key, JSON.stringify(value)); }
-    catch (e) { console.error("storage.set error", e); }
+    try {
+      localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    } catch (e) { console.error("localStorage.set error", e); }
   },
 };
 
@@ -880,8 +882,7 @@ export default function App() {
               width: 40, height: 40, borderRadius: 12, flexShrink: 0,
               background: "linear-gradient(135deg,#f97316,#ea580c)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(249,115,22,0.4)", fontSize: 20,
-            }}>🏀</div>
+            }}><img src="/icon.svg" alt="Basketball" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>
             <div>
               <h1 style={{ fontSize: 17, fontWeight: 900, color: "#1e293b", lineHeight: 1.2 }}>Basketball Tracker</h1>
               <p style={{ fontSize: 11, color: "#94a3b8" }}>AI バスケ練習管理</p>
