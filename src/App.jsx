@@ -36,21 +36,63 @@ const DB = {
 };
 
 // ==================== AI ====================
+// グローバルAI設定（ManageTabから更新される）
+window._aiConfig = window._aiConfig || { mode: "anthropic", apiKey: "", ollamaUrl: "http://localhost:11434", ollamaModel: "llama3" };
+
 async function callAI(systemPrompt, userPrompt) {
+  const cfg = window._aiConfig;
+
+  // APIキー未設定チェック
+  if (cfg.mode === "anthropic" && !cfg.apiKey) {
+    return "⚙️ 管理タブでAnthropicのAPIキーを設定してください。";
+  }
+  if (cfg.mode === "ollama" && !cfg.ollamaUrl) {
+    return "⚙️ 管理タブでOllamaのURLを設定してください。";
+  }
+
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-      }),
-    });
-    const data = await res.json();
-    return data.content?.[0]?.text || "エラーが発生しました。";
-  } catch { return "通信エラーが発生しました。"; }
+    if (cfg.mode === "anthropic") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": cfg.apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+      const data = await res.json();
+      if (data.error) return `APIエラー: ${data.error.message}`;
+      return data.content?.[0]?.text || "エラーが発生しました。";
+
+    } else {
+      // Ollama: /api/chat エンドポイント
+      const res = await fetch(`${cfg.ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: cfg.ollamaModel,
+          stream: false,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user",   content: userPrompt },
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (data.error) return `Ollamaエラー: ${data.error}`;
+      return data.message?.content || "エラーが発生しました。";
+    }
+  } catch (e) {
+    if (cfg.mode === "ollama") return `Ollama接続エラー: ${e.message}\nOllamaが起動しているか確認してください。`;
+    return `通信エラー: ${e.message}`;
+  }
 }
 
 // ==================== SHARED UI ====================
@@ -1053,6 +1095,46 @@ function ManageTab({ practices, games, sessions, setPractices, setGames, setSess
   const [exporting, setExporting] = useState(null);
   const [confirmClear, setConfirmClear] = useState(null); // "games"|"sessions"|"practices"|"all"
 
+  // ── AI設定 state（localStorageから復元） ──
+  const [aiMode, setAiMode] = useState(() => localStorage.getItem("bt_ai_mode") || "anthropic");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("bt_api_key") || "");
+  const [ollamaUrl, setOllamaUrl] = useState(() => localStorage.getItem("bt_ollama_url") || "http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState(() => localStorage.getItem("bt_ollama_model") || "llama3");
+  const [showKey, setShowKey] = useState(false);
+  const [testMsg, setTestMsg] = useState("");
+  const [testing, setTesting] = useState(false);
+
+  // マウント時にグローバルへ反映
+  useEffect(() => {
+    window._aiConfig = { mode: aiMode, apiKey, ollamaUrl, ollamaModel };
+  }, []);
+
+  const saveAiConfig = () => {
+    localStorage.setItem("bt_ai_mode", aiMode);
+    localStorage.setItem("bt_api_key", apiKey);
+    localStorage.setItem("bt_ollama_url", ollamaUrl);
+    localStorage.setItem("bt_ollama_model", ollamaModel);
+    window._aiConfig = { mode: aiMode, apiKey, ollamaUrl, ollamaModel };
+    setTestMsg("✅ 設定を保存しました");
+    setTimeout(() => setTestMsg(""), 10000);
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    setTestMsg("");
+    window._aiConfig = { mode: aiMode, apiKey, ollamaUrl, ollamaModel };
+    const result = await callAI(
+      "あなたはバスケットボールコーチです。",
+      "接続テスト：「接続OK」とだけ返してください。"
+    );
+    setTesting(false);
+    if (result.includes("エラー") || result.includes("設定")) {
+      setTestMsg("❌ " + result);
+    } else {
+      setTestMsg("✅ 接続成功: " + result.slice(0, 40));
+    }
+  };
+
   // ---- CSV エクスポート ----
   const exportCSV = (type) => {
     const today = new Date().toISOString().split("T")[0];
@@ -1160,6 +1242,109 @@ function ManageTab({ practices, games, sessions, setPractices, setGames, setSess
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
+
+      {/* ── AI設定カード ── */}
+      <Card>
+        <h2 style={{ fontSize: 15, fontWeight: 800, color: "#1e293b", marginBottom: 4 }}>🤖 AI設定</h2>
+        <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 14 }}>
+          AIコーチ機能に使用するLLMを設定します
+        </p>
+
+        {/* モード切り替え */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+          {[
+            { id: "anthropic", icon: "☁️", label: "Anthropic API", sub: "Claude（クラウド）" },
+            { id: "ollama",    icon: "🖥️", label: "Ollama",        sub: "ローカルLLM" },
+          ].map(m => (
+            <button key={m.id} onClick={() => setAiMode(m.id)} style={{
+              padding: "12px 10px", borderRadius: 12, border: "none", cursor: "pointer",
+              background: aiMode === m.id ? "linear-gradient(135deg,#f97316,#ea580c)" : "#f8fafc",
+              color: aiMode === m.id ? "white" : "#64748b",
+              outline: aiMode === m.id ? "none" : "1px solid #e2e8f0",
+              transition: "all 0.2s",
+            }}>
+              <div style={{ fontSize: 20, marginBottom: 4 }}>{m.icon}</div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{m.label}</div>
+              <div style={{ fontSize: 10, opacity: 0.8, marginTop: 2 }}>{m.sub}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Anthropic設定 */}
+        {aiMode === "anthropic" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>
+              Anthropic APIキー
+              <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer"
+                style={{ marginLeft: 8, fontSize: 11, color: "#f97316" }}>取得 →</a>
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type={showKey ? "text" : "password"}
+                placeholder="sk-ant-..."
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                style={{ ...INP, flex: 1, fontFamily: "monospace", fontSize: 12 }}
+              />
+              <button onClick={() => setShowKey(v => !v)} style={{
+                padding: "0 12px", background: "#f1f5f9", border: "1px solid #e2e8f0",
+                borderRadius: 10, cursor: "pointer", fontSize: 14, flexShrink: 0,
+              }}>{showKey ? "🙈" : "👁"}</button>
+            </div>
+            <p style={{ fontSize: 11, color: "#94a3b8" }}>
+              APIキーはlocalStorageに保存されます。本番利用ではバックエンドProxy推奨。
+            </p>
+          </div>
+        )}
+
+        {/* Ollama設定 */}
+        {aiMode === "ollama" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>OllamaサーバーURL</label>
+            <input
+              placeholder="http://localhost:11434"
+              value={ollamaUrl}
+              onChange={e => setOllamaUrl(e.target.value)}
+              style={{ ...INP, fontFamily: "monospace", fontSize: 12 }}
+            />
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>モデル名</label>
+            <input
+              placeholder="llama3 / gemma3 / mistral など"
+              value={ollamaModel}
+              onChange={e => setOllamaModel(e.target.value)}
+              style={{ ...INP, fontFamily: "monospace", fontSize: 12 }}
+            />
+            <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: 10, fontSize: 11, color: "#64748b", lineHeight: 1.7 }}>
+              <strong>Ollama起動手順：</strong><br />
+              1. <code style={{ background: "#e2e8f0", padding: "1px 4px", borderRadius: 4 }}>ollama serve</code> を実行<br />
+              2. <code style={{ background: "#e2e8f0", padding: "1px 4px", borderRadius: 4 }}>ollama pull {ollamaModel || "モデル名"}</code> でモデル取得<br />
+              3. CORSが必要な場合：環境変数に<code style={{ background: "#e2e8f0", padding: "1px 4px", borderRadius: 4 }}>OLLAMA_ORIGINS="*"</code>を追加
+            </div>
+          </div>
+        )}
+
+        {/* 保存・テストボタン */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+          <button onClick={saveAiConfig} style={{
+            padding: "12px 0", background: "linear-gradient(135deg,#f97316,#ea580c)",
+            border: "none", borderRadius: 12, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer",
+          }}>💾 保存</button>
+          <button onClick={testConnection} disabled={testing} style={{
+            padding: "12px 0", background: testing ? "#f1f5f9" : "linear-gradient(135deg,#1e293b,#0f172a)",
+            border: "none", borderRadius: 12, color: testing ? "#94a3b8" : "white",
+            fontWeight: 700, fontSize: 13, cursor: testing ? "not-allowed" : "pointer",
+          }}>{testing ? "テスト中..." : "🔌 接続テスト"}</button>
+        </div>
+
+        {testMsg && (
+          <div style={{
+            marginTop: 10, padding: "10px 14px", borderRadius: 10, fontSize: 12, fontWeight: 600,
+            background: testMsg.startsWith("✅") ? "#dcfce7" : "#fee2e2",
+            color: testMsg.startsWith("✅") ? "#16a34a" : "#dc2626",
+          }}>{testMsg}</div>
+        )}
+      </Card>
+
       {confirmClear && (
         <ConfirmDialog
           type={confirmClear}
@@ -1216,8 +1401,15 @@ export default function App() {
   const [sessions, setSessions]   = useState([]);
   const [booting, setBooting]     = useState(true);
 
-  // 起動時に全データをDBから復元
+  // 起動時に全データをDBから復元 + AI設定をグローバルに反映
   useEffect(() => {
+    // AI設定をlocalStorageから即時反映（ManageTabより先に読む）
+    window._aiConfig = {
+      mode:        localStorage.getItem("bt_ai_mode")      || "anthropic",
+      apiKey:      localStorage.getItem("bt_api_key")      || "",
+      ollamaUrl:   localStorage.getItem("bt_ollama_url")   || "http://localhost:11434",
+      ollamaModel: localStorage.getItem("bt_ollama_model") || "llama3",
+    };
     (async () => {
       const [p, g, s] = await Promise.all([
         DB.get("practices"),
