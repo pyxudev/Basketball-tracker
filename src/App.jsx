@@ -192,6 +192,122 @@ const INP = {
   fontSize: 13, width: "100%", minWidth: 0, outline: "none", background: "white",
 };
 
+// ==================== RELEASE NOTE MODAL ====================
+function ReleaseNoteModal({ onClose }) {
+  const [md, setMd] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch("/ReleaseNote.md")
+      .then(r => { if (!r.ok) throw new Error(); return r.text(); })
+      .then(text => { setMd(text); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, []);
+
+  // シンプルなMarkdown→HTML変換（外部ライブラリ不要）
+  const renderMd = (text) => {
+    const lines = text.split("\n");
+    const result = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^### /.test(line)) {
+        result.push(<h3 key={i} style={{ fontSize: 13, fontWeight: 800, color: "#f97316", margin: "14px 0 6px" }}>{line.slice(4)}</h3>);
+      } else if (/^## /.test(line)) {
+        result.push(<h2 key={i} style={{ fontSize: 15, fontWeight: 800, color: "#1e293b", margin: "18px 0 8px", paddingBottom: 6, borderBottom: "2px solid #f97316" }}>{line.slice(3)}</h2>);
+      } else if (/^# /.test(line)) {
+        result.push(<h1 key={i} style={{ fontSize: 18, fontWeight: 900, color: "#1e293b", margin: "0 0 12px" }}>{line.slice(2)}</h1>);
+      } else if (/^- /.test(line)) {
+        result.push(<div key={i} style={{ display: "flex", gap: 8, margin: "3px 0", fontSize: 13, color: "#334155" }}>
+          <span style={{ color: "#f97316", flexShrink: 0 }}>•</span>
+          <span>{line.slice(2)}</span>
+        </div>);
+      } else if (/^\d+\. /.test(line)) {
+        const num = line.match(/^(\d+)\. /)[1];
+        result.push(<div key={i} style={{ display: "flex", gap: 8, margin: "3px 0", fontSize: 13, color: "#334155" }}>
+          <span style={{ color: "#f97316", flexShrink: 0, fontWeight: 700 }}>{num}.</span>
+          <span>{line.replace(/^\d+\. /, "")}</span>
+        </div>);
+      } else if (/^---/.test(line)) {
+        result.push(<hr key={i} style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "12px 0" }} />);
+      } else if (line.trim() === "") {
+        result.push(<div key={i} style={{ height: 6 }} />);
+      } else {
+        // インラインの **bold** と `code` を処理
+        const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((p, j) => {
+          if (/^\*\*.*\*\*$/.test(p)) return <strong key={j} style={{ color: "#1e293b" }}>{p.slice(2, -2)}</strong>;
+          if (/^`.*`$/.test(p)) return <code key={j} style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4, fontSize: 12, fontFamily: "monospace" }}>{p.slice(1, -1)}</code>;
+          return p;
+        });
+        result.push(<p key={i} style={{ fontSize: 13, color: "#334155", lineHeight: 1.7, margin: "2px 0" }}>{parts}</p>);
+      }
+      i++;
+    }
+    return result;
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      zIndex: 2000, display: "flex", alignItems: "flex-end", justifyContent: "center",
+      padding: "0",
+    }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background: "white", width: "100%", maxWidth: 560,
+        borderRadius: "20px 20px 0 0",
+        maxHeight: "85dvh", display: "flex", flexDirection: "column",
+        boxShadow: "0 -8px 40px rgba(0,0,0,0.18)",
+        animation: "slideUp 0.25s ease",
+      }}>
+        <style>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+
+        {/* ハンドル */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 999, background: "#e2e8f0" }} />
+        </div>
+
+        {/* タイトルバー */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 20px 10px", borderBottom: "1px solid #f1f5f9", flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 10,
+              background: "linear-gradient(135deg,#f97316,#ea580c)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+            }}>📋</div>
+            <span style={{ fontWeight: 800, fontSize: 15, color: "#1e293b" }}>リリースノート</span>
+          </div>
+          <button onClick={onClose} style={{
+            background: "#f1f5f9", border: "none", borderRadius: 10,
+            width: 32, height: 32, cursor: "pointer", fontSize: 16,
+            display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b",
+          }}>✕</button>
+        </div>
+
+        {/* コンテンツ */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 32px" }}>
+          {loading && (
+            <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
+              <LoadingDots />
+            </div>
+          )}
+          {error && (
+            <div style={{ textAlign: "center", padding: 32, color: "#94a3b8" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+              <p style={{ fontSize: 13 }}>ReleaseNote.md が見つかりません</p>
+              <p style={{ fontSize: 11, marginTop: 6 }}>public/ReleaseNote.md に配置してください</p>
+            </div>
+          )}
+          {!loading && !error && renderMd(md)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ==================== HOME TAB ====================
 function HomeTab({ practices, onSessionSave }) {
   const [active, setActive] = useState(false);
@@ -1400,6 +1516,7 @@ export default function App() {
   const [games, setGames]         = useState([]);
   const [sessions, setSessions]   = useState([]);
   const [booting, setBooting]     = useState(true);
+  const [showReleaseNote, setShowReleaseNote] = useState(false);
 
   // 起動時に全データをDBから復元 + AI設定をグローバルに反映
   useEffect(() => {
@@ -1496,7 +1613,18 @@ export default function App() {
               <p style={{ fontSize: 11, color: "#94a3b8" }}>AI バスケ練習管理</p>
             </div>
           </div>
+          <button onClick={() => setShowReleaseNote(true)} style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 12px", background: "#f8fafc",
+            border: "1px solid #e2e8f0", borderRadius: 10,
+            cursor: "pointer", flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 14 }}>📋</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>更新履歴</span>
+          </button>
         </header>
+
+        {showReleaseNote && <ReleaseNoteModal onClose={() => setShowReleaseNote(false)} />}
 
         {/* Scrollable content */}
         <main style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: 16, width: "100%", minHeight: 0 }}>
